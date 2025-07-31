@@ -24,7 +24,7 @@ import { isNodeError } from '../utils/errors.js';
 import { Config, ApprovalMode } from '../config/config.js';
 import { DEFAULT_DIFF_OPTIONS } from './diffOptions.js';
 import { ModifiableTool, ModifyContext } from './modifiable-tool.js';
-import { getResponseText, extractTextAndErrorFromResponse } from '../utils/generateContentResponseUtilities.js';
+import { extractTextAndErrorFromResponse } from '../utils/generateContentResponseUtilities.js';
 
 /**
  * Parameters for the Edit tool
