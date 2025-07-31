@@ -37,6 +37,7 @@ import { AuthDialog } from './components/AuthDialog.js';
 import { AuthInProgress } from './components/AuthInProgress.js';
 import { EditorSettingsDialog } from './components/EditorSettingsDialog.js';
 import { ShellConfirmationDialog } from './components/ShellConfirmationDialog.js';
+import { UserAgreementIndicator } from './components/UserAgreementIndicator.js';
 import { Colors } from './colors.js';
 import { Help } from './components/Help.js';
 import { loadHierarchicalGeminiMemory } from '../config/config.js';
@@ -175,6 +176,8 @@ const App = ({ config, settings, startupWarnings = [], version }: AppProps) => {
     IdeContext | undefined
   >();
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
+  const [isAwaitingUserAgreement, setIsAwaitingUserAgreement] = useState<boolean>(false);
+  const [agreementMessage, setAgreementMessage] = useState<string>('');
 
   useEffect(() => {
     const unsubscribe = ideContext.subscribeToIdeContext(setIdeContextState);
@@ -499,6 +502,10 @@ const App = ({ config, settings, startupWarnings = [], version }: AppProps) => {
     performMemoryRefresh,
     modelSwitchedFromQuotaError,
     setModelSwitchedFromQuotaError,
+    (message: string) => {
+      setIsAwaitingUserAgreement(true);
+      setAgreementMessage(message);
+    },
   );
 
   // Input handling
@@ -506,10 +513,17 @@ const App = ({ config, settings, startupWarnings = [], version }: AppProps) => {
     (submittedValue: string) => {
       const trimmedValue = submittedValue.trim();
       if (trimmedValue.length > 0) {
+        // Check if we're awaiting user agreement
+        if (isAwaitingUserAgreement) {
+          // Clear the agreement state
+          setIsAwaitingUserAgreement(false);
+          setAgreementMessage('');
+          // Continue with the normal query
+        }
         submitQuery(trimmedValue);
       }
     },
-    [submitQuery],
+    [submitQuery, isAwaitingUserAgreement],
   );
 
   const buffer = useTextBuffer({
@@ -992,6 +1006,12 @@ const App = ({ config, settings, startupWarnings = [], version }: AppProps) => {
                     <ShowMoreLines constrainHeight={constrainHeight} />
                   </Box>
                 </OverflowProvider>
+              )}
+
+              {isAwaitingUserAgreement && (
+                <UserAgreementIndicator 
+                  message={agreementMessage}
+                />
               )}
 
               {isInputActive && (
