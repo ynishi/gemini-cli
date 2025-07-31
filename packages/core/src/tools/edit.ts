@@ -26,6 +26,7 @@ import { ensureCorrectEdit } from '../utils/editCorrector.js';
 import { DEFAULT_DIFF_OPTIONS } from './diffOptions.js';
 import { ReadFileTool } from './read-file.js';
 import { ModifiableTool, ModifyContext } from './modifiable-tool.js';
+import { ReplacementMetrics } from './replacementMetrics.js';
 
 /**
  * Parameters for the Edit tool
@@ -53,6 +54,12 @@ export interface EditToolParams {
   expected_replacements?: number;
 
   /**
+   * The 0-based index of the specific occurrence to replace when multiple matches are found.
+   * Only applicable when `expected_replacements` is 1 or unspecified.
+   */
+  target_occurrence_index?: number;
+
+  /**
    * Whether the edit was modified manually by the user.
    */
   modified_by_user?: boolean;
@@ -61,7 +68,7 @@ export interface EditToolParams {
 interface CalculatedEdit {
   currentContent: string | null;
   newContent: string;
-  occurrences: number;
+  replacementMetrics: ReplacementMetrics; // Replace 'occurrences' with the new object
   error?: { display: string; raw: string };
   isNewFile: boolean;
 }
@@ -114,6 +121,12 @@ Expectation for required parameters:
               'Number of replacements expected. Defaults to 1 if not specified. Use when you want to replace multiple occurrences.',
             minimum: 1,
           },
+          target_occurrence_index: {
+            type: Type.NUMBER,
+            description:
+              'The 0-based index of the specific occurrence to replace when multiple matches are found. Only applicable when `expected_replacements` is 1 or unspecified.',
+            minimum: 0,
+          },
         },
         required: ['file_path', 'old_string', 'new_string'],
         type: Type.OBJECT,
@@ -159,19 +172,55 @@ Expectation for required parameters:
     oldString: string,
     newString: string,
     isNewFile: boolean,
+    targetOccurrenceIndex?: number,
   ): string {
     if (isNewFile) {
       return newString;
     }
     if (currentContent === null) {
-      // Should not happen if not a new file, but defensively return empty or newString if oldString is also empty
       return oldString === '' ? newString : '';
     }
-    // If oldString is empty and it's not a new file, do not modify the content.
     if (oldString === '' && !isNewFile) {
       return currentContent;
     }
-    return currentContent.replaceAll(oldString, newString);
+
+    if (targetOccurrenceIndex !== undefined) {
+      let parts: string[] = [];
+      let currentPos = 0;
+      let count = 0;
+      let foundTarget = false;
+
+      let matchIndex = currentContent.indexOf(oldString, currentPos);
+      while (matchIndex !== -1) {
+        if (count === targetOccurrenceIndex) {
+          // Add the part before the target occurrence
+          parts.push(currentContent.substring(currentPos, matchIndex));
+          // Add the new string
+          parts.push(newString);
+          // Move currentPos past the replaced oldString
+          currentPos = matchIndex + oldString.length;
+          foundTarget = true;
+          break; // Exit after replacing the target
+        } else {
+          // For non-target occurrences, just add the part and the oldString itself
+          parts.push(currentContent.substring(currentPos, matchIndex + oldString.length));
+          currentPos = matchIndex + oldString.length;
+        }
+        count++;
+        matchIndex = currentContent.indexOf(oldString, currentPos);
+      }
+
+      if (foundTarget) {
+        // Add any remaining content after the target replacement
+        parts.push(currentContent.substring(currentPos));
+        return parts.join('');
+      } else {
+        // If targetOccurrenceIndex not found (e.g., out of bounds), return original
+        return currentContent;
+      }
+    } else {
+      return currentContent.replaceAll(oldString, newString);
+    }
   }
 
   /**
@@ -190,8 +239,10 @@ Expectation for required parameters:
     let isNewFile = false;
     let finalNewString = params.new_string;
     let finalOldString = params.old_string;
-    let occurrences = 0;
     let error: { display: string; raw: string } | undefined = undefined;
+
+    // Create ReplacementMetrics instance early to encapsulate all occurrence-related logic
+    let replacementMetrics: ReplacementMetrics;
 
     try {
       currentContent = fs.readFileSync(params.file_path, 'utf8');
@@ -209,12 +260,25 @@ Expectation for required parameters:
     if (params.old_string === '' && !fileExists) {
       // Creating a new file
       isNewFile = true;
+      // For new files, there are no occurrences of old_string, and 1 replacement is expected (the new file itself)
+      replacementMetrics = new ReplacementMetrics(
+        '', // No content yet
+        params.old_string,
+        1, // Expected 1 replacement (the new file)
+        undefined,
+      );
     } else if (!fileExists) {
       // Trying to edit a nonexistent file (and old_string is not empty)
       error = {
         display: `File not found. Cannot apply edit. Use an empty old_string to create a new file.`,
         raw: `File not found: ${params.file_path}`,
       };
+      replacementMetrics = new ReplacementMetrics(
+        '', // No content
+        params.old_string,
+        expectedReplacements,
+        params.target_occurrence_index,
+      );
     } else if (currentContent !== null) {
       // Editing an existing file
       const correctedEdit = await ensureCorrectEdit(
@@ -226,7 +290,14 @@ Expectation for required parameters:
       );
       finalOldString = correctedEdit.params.old_string;
       finalNewString = correctedEdit.params.new_string;
-      occurrences = correctedEdit.occurrences;
+
+      // Initialize ReplacementMetrics with actual content and corrected oldString
+      replacementMetrics = new ReplacementMetrics(
+        currentContent,
+        finalOldString,
+        expectedReplacements,
+        params.target_occurrence_index,
+      );
 
       if (params.old_string === '') {
         // Error: Trying to create a file that already exists
@@ -234,18 +305,26 @@ Expectation for required parameters:
           display: `Failed to edit. Attempted to create a file that already exists.`,
           raw: `File already exists, cannot create: ${params.file_path}`,
         };
-      } else if (occurrences === 0) {
+      } else if (replacementMetrics.totalMatchesInFile === 0) {
         error = {
           display: `Failed to edit, could not find the string to replace.`,
           raw: `Failed to edit, 0 occurrences found for old_string in ${params.file_path}. No edits made. The exact text in old_string was not found. Ensure you're not escaping content incorrectly and check whitespace, indentation, and context. Use ${ReadFileTool.Name} tool to verify.`,
         };
-      } else if (occurrences !== expectedReplacements) {
-        const occurrenceTerm =
-          expectedReplacements === 1 ? 'occurrence' : 'occurrences';
-
+      } else if (!replacementMetrics.isValidTargetIndex) {
         error = {
-          display: `Failed to edit, expected ${expectedReplacements} ${occurrenceTerm} but found ${occurrences}.`,
-          raw: `Failed to edit, Expected ${expectedReplacements} ${occurrenceTerm} but found ${occurrences} for old_string in file: ${params.file_path}`,
+          display: replacementMetrics.getErrorMessageForTargetIndexOutOfBounds(),
+          raw: replacementMetrics.getErrorMessageForTargetIndexOutOfBounds(),
+        };
+      } else if (replacementMetrics.isMultipleMatchesForSingleExpected) {
+        error = {
+          display: replacementMetrics.getErrorMessageForMultipleMatches(),
+          raw: replacementMetrics.getErrorMessageForMultipleMatches(),
+        };
+      } else if (replacementMetrics.actualReplacementsCount !== expectedReplacements) {
+        // This covers cases where expectedReplacements is > 1 but actualReplacementsCount is different
+        error = {
+          display: replacementMetrics.getErrorMessageForMismatch(),
+          raw: `Failed to edit, Expected ${expectedReplacements} ${expectedReplacements === 1 ? 'occurrence' : 'occurrences'} but found ${replacementMetrics.actualReplacementsCount} for old_string in file: ${params.file_path}`,
         };
       } else if (finalOldString === finalNewString) {
         error = {
@@ -259,6 +338,12 @@ Expectation for required parameters:
         display: `Failed to read content of file.`,
         raw: `Failed to read content of existing file: ${params.file_path}`,
       };
+      replacementMetrics = new ReplacementMetrics(
+        '', // No content
+        params.old_string,
+        expectedReplacements,
+        params.target_occurrence_index,
+      );
     }
 
     const newContent = this._applyReplacement(
@@ -266,12 +351,13 @@ Expectation for required parameters:
       finalOldString,
       finalNewString,
       isNewFile,
+      params.target_occurrence_index,
     );
 
     return {
       currentContent,
       newContent,
-      occurrences,
+      replacementMetrics,
       error,
       isNewFile,
     };
@@ -425,7 +511,7 @@ Expectation for required parameters:
       const llmSuccessMessageParts = [
         editData.isNewFile
           ? `Created new file: ${params.file_path} with provided content.`
-          : `Successfully modified file: ${params.file_path} (${editData.occurrences} replacements).`,
+          : `Successfully modified file: ${params.file_path} (${editData.replacementMetrics.actualReplacementsCount} replacements).`,
       ];
       if (params.modified_by_user) {
         llmSuccessMessageParts.push(
@@ -475,6 +561,7 @@ Expectation for required parameters:
             params.old_string,
             params.new_string,
             params.old_string === '' && currentContent === '',
+            params.target_occurrence_index,
           );
         } catch (err) {
           if (!isNodeError(err) || err.code !== 'ENOENT') throw err;
