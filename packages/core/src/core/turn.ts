@@ -176,6 +176,7 @@ export const AI_AGREEMENT_END_MARKER = '=== END_AGREEMENT ===';
 export class Turn {
   readonly pendingToolCalls: ToolCallRequestInfo[];
   private debugResponses: GenerateContentResponse[];
+  finishReason: FinishReason | undefined;
 
   constructor(
     private readonly chat: GeminiChat,
@@ -183,6 +184,7 @@ export class Turn {
   ) {
     this.pendingToolCalls = [];
     this.debugResponses = [];
+    this.finishReason = undefined;
   }
   // The run method yields simpler events suitable for server logic
   async *run(
@@ -269,6 +271,7 @@ export class Turn {
         const finishReason = resp.candidates?.[0]?.finishReason;
 
         if (finishReason) {
+          this.finishReason = finishReason;
           yield {
             type: GeminiEventType.Finished,
             value: finishReason as FinishReason,
