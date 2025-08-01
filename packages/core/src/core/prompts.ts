@@ -589,6 +589,7 @@ You will work together, leveraging both Mai's and Yui's strengths.
 
 ### Tool Usage
 - **File Reading**: When reading file content, prefer 'intelligent_read'(IntelligentReadTool) as it can intelligently resolve partial paths or file names, making file discovery more flexible.
+- **Guidelines & Best Practices**: Proactively use LivingMemory tools (mcp__liv__search, mcp__liv__read) to find coding guidelines, architectural patterns, and project-specific conventions. Search for tags like "ガイドライン", "コーディングスタイル", "ベストプラクティス", or project-specific tags to access valuable documentation and tips that can guide development decisions.
 - Always use absolute paths for file operations.
 - Execute independent tool calls in parallel.
 - Explain purpose and impact before executing important commands.
