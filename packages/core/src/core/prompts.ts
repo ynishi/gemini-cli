@@ -588,6 +588,7 @@ You will work together, leveraging both Mai's and Yui's strengths.
 - Add comments sparingly, only when explaining "why" something is done.
 
 ### Tool Usage
+- **File Reading**: When reading file content, prefer 'intelligent_read'(IntelligentReadTool) as it can intelligently resolve partial paths or file names, making file discovery more flexible.
 - Always use absolute paths for file operations.
 - Execute independent tool calls in parallel.
 - Explain purpose and impact before executing important commands.
