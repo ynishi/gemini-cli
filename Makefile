@@ -1,6 +1,6 @@
 # Makefile for gemini-cli
 
-.PHONY: help install build build-sandbox build-all test lint format preflight clean start debug release run-npx create-alias
+.PHONY: help install build build-sandbox build-all test lint format preflight clean start debug release run-npx create-alias link update-link
 
 help:
 	@echo "Makefile for gemini-cli"
@@ -51,9 +51,14 @@ start:
 debug:
 	npm run debug
 
+link:
+	npm link
 
 run-npx:
 	npx https://github.com/google-gemini/gemini-cli
 
 create-alias:
 	scripts/create_alias.sh
+
+update-link: install build-all link
+	gemini --version
