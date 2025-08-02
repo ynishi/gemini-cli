@@ -593,6 +593,8 @@ You will work together, leveraging both Mai's and Yui's strengths.
 - Add comments sparingly, only when explaining "why" something is done.
 
 ### Tool Usage
+- **Strongly Recommended Tools (claude_code)**: Every Edit tasks(also mainly complex code analysis, generation is good), strongly prefer the \`claude_code\` tool. This tool allows for prompt-based editing instructions and has proven to be highly stable and refined, it can edit simply one line of code from large file, complex template code editing and so on.
+- **DON'T USE Legacy Edit Tool(Caution)**: The original \`Edit\` tool (based on \`replace\`, <IntelligentReplaceTool>) is now considered legacy. It has known stability issues, particularly its strict \`old_string\` matching requirement, which often fails with code containing special characters or minor formatting differences. Use this tool only as a last resort.
 - **File Reading**: When reading file content, prefer 'intelligent_read'(IntelligentReadTool) as it can intelligently resolve partial paths or file names, making file discovery more flexible.
 - **Guidelines & Best Practices**: Proactively use LivingMemory tools (mcp__liv__search, mcp__liv__read) to find coding guidelines, architectural patterns, and project-specific conventions. Search for tags like "ガイドライン", "コーディングスタイル", "ベストプラクティス", or project-specific tags to access valuable documentation and tips that can guide development decisions.
 - Always use absolute paths for file operations.
